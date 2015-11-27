@@ -5,11 +5,13 @@
 #       All rights reserved.                                         #
 #====================================================================#
 SELF=$(basename $0)
-MASCM_VER="6.7"
+MASCM_VER="6.9.5"
 
 # Software versions 
-MAGENTO_VER="1.9.1.0"
-PHPMYADMIN_VER="4.3.7"
+#MAGE_LATEST=$(wget -q -O- http://connect20.magentocommerce.com/community/Mage_All_Latest/releases.xml | tail -6 | grep -Po '(?<=<v>).*(?=</v>)')
+MAGENTO_TMP_FILE="https://www.dropbox.com/s/v6libswo5zd68q2/magento-1.9.2.2-2015-10-27-03-19-32.tar.gz"
+MAGENTO_VER="1.9.2.2"
+PHPMYADMIN_VER="4.5.1"
 
 # Simple colors
 RED="\e[31;40m"
@@ -127,12 +129,12 @@ if [[ ${EUID} -ne 0 ]]; then
 fi
 
 # do we have CentOS 6?
-if grep "CentOS.*6" /etc/redhat-release  > /dev/null 2>&1; then
+if grep "CentOS.* 6\." /etc/redhat-release  > /dev/null 2>&1; then
   GREENTXT "PASS: CENTOS RELEASE 6"
   else
   echo
   REDTXT "ERROR: UNABLE TO DETERMINE DISTRIBUTION TYPE."
-  YELLOWTXT "------> THIS CONFIGURATION FOR CENTOS 6."
+  YELLOWTXT "------> THIS CONFIGURATION FOR CENTOS 6"
   echo
   exit 1
 fi
@@ -264,7 +266,7 @@ if [ "${secure_tmp}" == "y" ];then
 	mkdir /tmp
 	mount -t tmpfs -o rw,noexec,nosuid tmpfs /tmp
 	chmod 1777 /tmp
-	echo "tmpfs		/tmp	tmpfs	rw,noexec,nosuid	0	0" >> /etc/fstab
+	echo "tmpfs  /tmp  tmpfs  rw,noexec,nosuid  0  0" >> /etc/fstab
 	rm -rf /var/tmp
 	ln -s /tmp /var/tmp
 	echo
@@ -279,10 +281,10 @@ echo
 if grep -q "yes" /root/mascm/.sysupdate >/dev/null 2>&1 ; then
 echo
 else
+echo "CHECKING UPDATES..."
 UPDATES=$(yum check-update | grep updates | wc -l)
 KERNEL=$(yum check-update | grep ^kernel | wc -l)
 if [ "${UPDATES}" -gt 20 ] || [ "${KERNEL}" -gt 0 ]; then
-echo "CHECK UPDATES"
 echo
 YELLOWTXT "---> NEW UPDATED PKGS: ${UPDATES}"
 YELLOWTXT "---> NEW KERNEL PKGS: ${KERNEL}"
@@ -302,11 +304,8 @@ if [ "${sys_update}" == "y" ]; then
             echo
             GREENTXT "THE SYSTEM IS UP TO DATE  -  OK"
             echo "yes" > /root/mascm/.sysupdate
-	    REDTXT "PLEASE REBOOT THE SERVER NOW"
 	    echo
 	    echo
-	    echo
-	    exit 0
           else
          echo
        YELLOWTXT "The System Update was skipped by the user. Next step"
@@ -347,7 +346,7 @@ if [ "${repo_epel_install}" == "y" ];then
             echo -n "     PROCESSING  "
             long_progress &
             pid="$!"
-            yum -q -y install bc gcc inotify-tools mcrypt mlocate unzip vim wget curl sudo >/dev/null 2>&1
+            yum -q -y install svn bc gcc inotify-tools rsync mcrypt mlocate unzip vim wget curl sudo >/dev/null 2>&1
             stop_progress "$pid"
             echo
            rpm  --quiet -q wget
@@ -490,7 +489,7 @@ if [ "${repo_remi_install}" == "y" ];then
             echo -n "     PROCESSING  "
             quick_progress &
             pid="$!"
-            rpm -Uvh http://rpms.famillecollet.com/enterprise/6/remi/x86_64/remi-release-6.5-1.el6.remi.noarch.rpm >/dev/null 2>&1
+            rpm -U http://rpms.remirepo.net/enterprise/remi-release-6.rpm >/dev/null 2>&1
             stop_progress "$pid"
             rpm  --quiet -q remi-release
       if [ "$?" = 0 ]
@@ -610,8 +609,8 @@ if [ "${load_configs}" == "y" ];then
 echo
 WHITETXT "YOU HAVE TO CHECK THEM AFTER ANYWAY"
 cat > /etc/sysctl.conf <<END
-fs.file-max = 700000
-fs.inotify.max_user_watches=500000
+fs.file-max = 1000000
+fs.inotify.max_user_watches = 700000
 vm.swappiness = 10
 net.ipv4.ip_forward = 0
 net.ipv4.conf.default.rp_filter = 1
@@ -643,7 +642,7 @@ net.core.wmem_max = 16777216
 net.core.rmem_default = 8388608
 net.core.wmem_default = 8388608
 net.core.netdev_max_backlog = 262144
-net.core.somaxconn = 262144
+net.core.somaxconn = 65535
 END
 
 sysctl -q -p
@@ -713,8 +712,8 @@ WHITETXT "memcached config loaded ... \033[01;32m  ok"
 echo -e '\nfastcgi_read_timeout 7200;\nfastcgi_send_timeout 7200;\nfastcgi_connect_timeout 65;\n' >> /etc/nginx/fastcgi_params
 WHITETXT "fastcgi_params loaded ... \033[01;32m  ok"
 echo
-echo "*         soft    nofile          100000" >> /etc/security/limits.conf
-echo "*         hard    nofile          500000" >> /etc/security/limits.conf
+echo "*         soft    nofile          500000" >> /etc/security/limits.conf
+echo "*         hard    nofile          700000" >> /etc/security/limits.conf
   else
         YELLOWTXT "Configuration was skipped by the user. Next step"
 fi
@@ -742,17 +741,26 @@ FPM_USER=$(grep "user" $FPM | grep "=" | awk '{print $3}')
 echo -n "---> Download latest Magento version (${MAGENTO_VER}) ? [y/n][n]:"
 read new_down
 if [ "${new_down}" == "y" ];then
-     read -e -p "---> Edit your installation folder full path: " -i "/var/www/html/myshop.com" MY_SHOP_PATH
+     read -e -p "---> Enter folder full path: " -i "/var/www/html/myshop.com" MY_SHOP_PATH
         echo "  Magento will be downloaded to:"
         GREENTXT ${MY_SHOP_PATH}
-        pause '------> Press [Enter] key to continue'
         mkdir -p ${MY_SHOP_PATH} && cd $_
         echo -n "      DOWNLOADING MAGENTO  "
         long_progress &
         pid="$!"
-        wget -qO - http://www.magentocommerce.com/downloads/assets/${MAGENTO_VER}/magento-${MAGENTO_VER}.tar.gz | tar -xzp --strip 1
+        wget -qO- ${MAGENTO_TMP_FILE} | tar -xzp
         stop_progress "$pid"
         echo
+        else
+        echo "      You are going to move your own files then"
+        read -e -p "---> Edit your installation folder full path: " -i "/var/www/html/myshop.com" MY_SHOP_PATH
+        GREENTXT ${MY_SHOP_PATH}
+        if [ ! -d "${MY_SHOP_PATH}" ]; then
+        mkdir -p ${MY_SHOP_PATH}
+        fi
+        echo "      Move your magento files to this folder now"
+        pause '------> Press [Enter] key to continue'
+fi
      echo
 WHITETXT "============================================================================="
 GREENTXT "      == MAGENTO DOWNLOADED AND READY FOR INSTALLATION =="
@@ -774,8 +782,10 @@ sed -i "s/example.com/${MY_DOMAIN}/g" /etc/nginx/www/magento.conf
 sed -i "s,root /var/www/html,root ${MY_SHOP_PATH},g" /etc/nginx/www/magento.conf
 
 cd /etc/nginx/conf.d/ && rm -rf *
+wget -q https://raw.githubusercontent.com/magenx/nginx-config/master/magento/conf.d/export.conf
 wget -q https://raw.githubusercontent.com/magenx/nginx-config/master/magento/conf.d/error_page.conf
 wget -q https://raw.githubusercontent.com/magenx/nginx-config/master/magento/conf.d/extra_protect.conf
+wget -q https://raw.githubusercontent.com/magenx/nginx-config/master/magento/conf.d/hhvm.conf
 wget -q https://raw.githubusercontent.com/magenx/nginx-config/master/magento/conf.d/headers.conf
 wget -q https://raw.githubusercontent.com/magenx/nginx-config/master/magento/conf.d/maintenance.conf
 wget -q https://raw.githubusercontent.com/magenx/nginx-config/master/magento/conf.d/multishop.conf
@@ -798,7 +808,7 @@ echo
      MYSQL_FILE=$(head -c 500 /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 7 | head -n 1)
      BLOWFISHCODE=$(head -c 500 /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
      mkdir -p ${MYSQL_FILE} && cd $_
-     wget -qO - http://sourceforge.net/projects/phpmyadmin/files/phpMyAdmin/${PHPMYADMIN_VER}/phpMyAdmin-${PHPMYADMIN_VER}-all-languages.tar.gz | tar -xzp --strip 1
+     wget -qO - https://files.phpmyadmin.net/phpMyAdmin/${PHPMYADMIN_VER}/phpMyAdmin-${PHPMYADMIN_VER}-all-languages.tar.gz | tar -xzp --strip 1
      mv config.sample.inc.php config.inc.php
      sed -i 's/a8b7c6d/${BLOWFISHCODE}/' ./config.inc.php
      echo
@@ -890,14 +900,8 @@ echo "--------------------------------------------------------------------------
 BLUEBG " CONFIGURATION IS COMPLETE "
 echo "-------------------------------------------------------------------------------------"
 echo
-pause '------> Press [Enter] key to show menu'
-echo
-else
-echo
-echo
 pause '---> Press [Enter] key to show menu'
 printf "\033c"
-fi
 ;;
 ###################################################################################
 #                                MAGENTO DATABASE SETUP                           #
@@ -994,6 +998,7 @@ echo
 WHITETXT "============================================================================="
 echo
 GREENTXT "NOW INSTALLING MAGENTO WITHOUT SAMPLE DATA"
+MAGE_ADMIN_PATH=$(head -c 500 /dev/urandom | tr -dc 'a-zA-Z' | fold -w 10 | head -n 1)
 MY_SHOP_PATH=$(awk '/webshop/ { print $3 }' /root/mascm/.mascm_index)
 cd ${MY_SHOP_PATH}
 chmod +x mage
@@ -1014,6 +1019,7 @@ php -f install.php -- \
 --secure_base_url "" \
 --skip_url_validation "yes" \
 --use_secure_admin "no" \
+--admin_frontname "${MAGE_ADMIN_PATH}" \
 --admin_firstname "${MAGE_ADMIN_FNAME}" \
 --admin_lastname "${MAGE_ADMIN_LNAME}" \
 --admin_email "${MAGE_ADMIN_EMAIL}" \
@@ -1029,6 +1035,7 @@ GREENTXT "ok"
     WHITETXT "============================================================================="
     WHITETXT " MAGENTO ADMIN ACCOUNT"
     echo
+    echo "      Admin path: ${MAGE_SITE_URL}${MAGE_ADMIN_PATH}"
     echo "      Username: ${MAGE_ADMIN_LOGIN}"
     echo "      Password: ${MAGE_ADMIN_PASS}"
     echo
@@ -1103,8 +1110,8 @@ echo
 rm -rf  ${MY_SHOP_PATH}/var/locks/*
 php ${MY_SHOP_PATH}/shell/indexer.php --reindexall
 echo
-chmod +x /root/app_monitor.sh
-/root/app_monitor.sh &
+chmod +x /root/zend_opcache_monitor.sh
+/root/zend_opcache_monitor.sh &
 echo
 echo
 echo "---> CREATE SAMPLE LOGROTATE SCRIPT FOR MAGENTO LOGS"
